@@ -1,0 +1,614 @@
+---
+title: "CourseWork"
+output: html_document
+date: "2024-04-09"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1
+
+```{r}
+# Read the data
+cet <- read.csv('cet_temp.csv')
+
+# Convert it into a timeseries with
+  # start = 1900 
+  # frequency = 1 (yearly data)
+cet_temp <- ts(cet$avg_annual_temp_C, start = 1900, frequency = 1)
+
+# Plot the timeseries
+ts.plot(cet_temp, gpars = list(main = "Time Series Plot for Average Annual Temperature", xlab = "Year", ylab = "Average annual temperature"))
+
+# Plot ACF vs Lag
+acf(cet_temp, lag.max = 50, main = "Sample ACF vs Lag for Average Annual Temperature")
+
+# Plot PACF vs Lag
+pacf(cet_temp, lag.max = 50,main = "Sample PACF vs Lag for Average Annual Temperature")
+```
+Looking at these plots, the process does not appear to be stationary. 
+
+The time plot shows variation over time. We can see that the mean of the series appears to be higher in the later years(for example 1990 - 2020), than in the beginning of the plot(1900 - 1990). There is an upward trend in the plot.
+
+The sample ACF plot decreases initially, however, it does not decline to zero very rapidly.
+
+The sample PACF plot does not provide enough information, compared to the timeplot and the sample ACF plot.
+
+We take the first difference of the timeseries to remove non-stationarity.
+
+```{r}
+# Take first difference of the timeseries ( Wt = (1-B)Xt )
+temp_diff <- diff(cet_temp)
+
+# Plot the timeseries
+ts.plot(temp_diff, gpars = list(main = "Time Series Plot for 1st differenced temperature data", xlab = "Year", ylab = "1st Difference of Avg annual temp"))
+
+# Plot the ACF vs Lag
+acf(temp_diff, lag.max = 50,main = "Sample ACF vs Lag for 1st differenced data")
+
+# Plot the PACF vs Lag
+pacf(temp_diff, lag.max = 50,main = "Sample PACF vs Lag for 1st differenced data")
+```
+
+These plots show that the first-difference of the data is (weakly) stationary.
+
+The timeplot has a constant mean 0 and appears to have a constant variability over time.
+
+The sample ACF has a sudden decline to 0 after lag 1. Some spikes after that appear to be close to ±2/√n. However, there is not a systematic departure from 0. This shows that the timeseries has an MA component of order 1.
+
+The sample PACF gradually decreases to 0. This shows that there is no AR component.
+
+We begin by fitting an MA(1) model to the differenced data
+
+```{r}
+#Code to fit MA(1) model to the first difference of the average annual temperature
+
+#p = 0 Order of the AR part of the model
+#d = 1 Order of differencing (First differenced data)
+#q = 1 Order of the MA part of the model
+
+model.MA1<-arima(cet_temp, order=c(0,1,1), method="ML")
+model.MA1
+```
+The parameter estimates for θ1 and sigma^2 are -0.8495 and 0.3654 respectively.
+We have a negative log likelihood value of -111.43 and an AIC value of 226.86.
+
+The equation for this model is:
+$$
+W_t = (1 + \theta_1 B)Z_t\\
+
+(1-B)X_t = (1 + \theta_1 B)Z_t\\
+
+(1-B)X_t = (1 - 0.8495 B)Z_t\\
+
+X_t - X_{t-1} = Z_t - (0.8495)Z_{t-1}
+$$
+where Xt = original timeseries
+      Wt = differenced timeseries
+      Zt = white noise
+                  
+Lets check if the model residuals are white noise.
+
+```{r}
+# Extract the residuals of the model
+resid.MA1<-residuals(model.MA1)
+```
+
+```{r}
+# Plot the residuals
+ts.plot(resid.MA1, gpars = list(main = "Time Series Plot for residuals of ARIMA(0,1,1) model", xlab = "Year", ylab = "ARIMA(0,1,1) Residuals"))
+
+# Plot ACF for the residuals
+acf(resid.MA1, lag.max = 50, main = "ACF vs Lag for ARIMA(0,1,1) model Residuals")
+
+# Plot PACF for the residuals
+pacf(resid.MA1, lag.max = 50, main = "PACF vs Lag for ARIMA(0,1,1) model Residuals")
+```
+The model residuals appear to be white noise.
+
+The timeplot shows a constant mean 0 and a constant variance for the residuals.
+The ACF is also 0 (or close 0) for lag >= 1. This suggests that the residuals are independent.
+
+Next we produce a plot of the Ljung-Box test P-values to see how well the model fits the data.
+
+```{r}
+#Function to produce P-values for the Ljung-Box test for different lags
+#where an ARMA(p,q) model has been fitted.
+#Note that k must be > p+q
+#Number of degrees of freedom for the test = k-p-q
+
+#Arguments for the function "LB_test"
+#resid = residuals from a fitted ARMA(p,q) model.
+
+#max.k = the maximum value of k at which we perform the test
+#Note that the minimum k is set at p+q+1 (corresponding to a test with one degree
+#of freedom)
+
+#p = Order of the AR part of the model
+#q = Order of the MA part of the model 
+
+#The function returns a table with one column showing the number of degrees 
+#of freedom for the test and the other the associated P-value.
+
+LB_test<-function(resid,max.k,p,q){
+  lb_result<-list()
+  df<-list()
+  p_value<-list()
+  for(i in (p+q+1):max.k){
+    lb_result[[i]]<-Box.test(resid,lag=i,type=c("Ljung-Box"),fitdf=(p+q))
+    df[[i]]<-lb_result[[i]]$parameter
+    p_value[[i]]<-lb_result[[i]]$p.value
+  }
+  df<-as.vector(unlist(df))
+  p_value<-as.vector(unlist(p_value))
+  test_output<-data.frame(df,p_value)
+  names(test_output)<-c("deg_freedom","LB_p_value")
+  return(test_output)
+}
+
+```
+
+```{r}
+#Since p+q=1, we run the following command to perform the first ten
+#Ljung-Box tests for the model residuals (max.k=11)
+MA1.LB<-LB_test(resid.MA1,max.k=11,p=0,q=1)
+#To see the table of P-values
+MA1.LB
+#To produce a plot of the P-values against the degrees of freedom and
+#add a blue dashed line at 0.05, we run the commands
+plot(MA1.LB$deg_freedom,MA1.LB$LB_p_value,xlab="Degrees of freedom",ylab="Pvalue",main="Ljung-Box test P-values",ylim=c(0,1))
+abline(h=0.05,col="blue",lty=2)
+
+```
+All the p-values are greater than 0.05. This suggests that the ARIMA(0,1,1) is a good fit for the data.
+
+We should check if addition of further parameters improves the model fit.
+
+We consider the ARIMA(0, 1, 2) model.
+
+```{r}
+#Code to fit MA(2) model to the first difference of the average annual temperature
+
+#p = 0 Order of the AR part of the model
+#d = 1 Order of differencing (First differenced data)
+#q = 2 Order of the MA part of the model
+
+model.MA2<-arima(cet_temp, order=c(0,1,2), method="ML")
+model.MA2
+```
+There is a slight increase in AIC from 226.86 to 227.77 for ARIMA(0, 1, 2) compared to the ARIMA(0,1,1) model. Therefore, we prefer the model MA(0,1,1) over MA(0,1,2). 
+
+We perform a hypothesis test 
+H0 : θ2 = 0 versus H1 : θ2 != 0
+
+The test statistic is |− 0.0847/0.0807| = 1.05 < 2. Therefore we retain H0 at 5% significance level and conclude that the ARIMA(0, 1, 1) model is preferred over ARIMA(0, 1, 2).
+
+Lets consider ARIMA(1, 1, 1) model
+
+```{r}
+#Code to fit ARIMA(1, 1, 1) model to the average annual temperature
+
+#p = 1 Order of the AR part of the model
+#d = 1 Order of differencing (First differenced data)
+#q = 1 Order of the MA part of the model
+
+model.ARMA11<-arima(cet_temp, order=c(1,1,1), method="ML")
+model.ARMA11
+```
+There is an increase in AIC from 226.86 to 227.63 for ARIMA(1, 1, 1) compared to ARIMA(0,1,1) model. Therefore, we prefer the model ARIMA(0,1,1) over ARIMA(1,1,1). 
+
+Lets perform a hypothesis test 
+H0 : φ1 = 0 versus H1 : φ1 != 0
+
+The test statistic is |0.1137/0.1026| = 1.11 < 2. Therefore we retain H0 at 5% significance level and conclude that the ARIMA(0, 1, 1) model is preferred over ARIMA(1, 1, 1).
+
+Therefore, we choose the ARIMA(0,1,1) model as the most appropriate model for the Average annual temperature data.
+
+The equation for this model is:
+$$
+W_t = (1 + \theta_1 B)Z_t\\
+
+(1-B)X_t = (1 + \theta_1 B)Z_t\\
+
+(1-B)X_t = (1 - 0.8495 B)Z_t\\
+
+X_t - X_{t-1} = Z_t - 0.8495Z_{t-1}
+$$
+where Xt = original timeseries
+      Wt = 1st differenced timeseries
+      Zt = white noise
+                  
+## Question 2
+
+```{r}
+
+# Read the data
+prices <- read.csv('em_house_prices.csv')
+
+#Convert it into timeseries with
+  # start = 2010
+  # frequency = 12 (monthly data)
+prices <- ts(prices$average_price_gbp, start = 2010, frequency = 12)
+
+# Plot the timeseries for average house prices
+ts.plot(prices, gpars = list(main = "Time Series Plot for Average House Prices", xlab = "Year", ylab = "Average House Price"))
+
+# Plot ACF vs Lag
+acf(prices, lag.max = 60, main = "Sample ACF vs Lag for Average House Prices")
+
+#Plot PACF vs Lag
+pacf(prices, lag.max = 60, main = "Sample PACF vs Lag for Average House Prices")
+
+```
+Looking at these plots, the process does not appear to be stationary. 
+
+The time plot shows variation over time. We can see that there is an upward trend in the plot. Also there is some seasonality in the data, which is recorded on monthly basis.
+
+The sample ACF is decreasing. However, it does not become zero. Instead it becomes negative and the values become less than-2/√n.
+
+
+We take the first difference of the timeseries to remove the trend.
+
+```{r}
+# Take first difference of the timeseries ( Wt = (1-B)Xt )
+prices_diff <- diff(prices)
+
+# Plot the timeseries for 1st differenced data
+ts.plot(prices_diff, gpars = list(main = "Time Series Plot for 1st differenced Prices", xlab = "Year", ylab = "1st Differenced Average House Price"))
+
+# Plot ACF vs Lag for 1st differenced data
+acf(prices_diff, lag.max = 60, main = "ACF vs Lag for 1st Differenced Prices")
+
+# Plot PACF vs Lag for 1st differenced data
+pacf(prices_diff, lag.max = 60, main = "PACF vs Lag for 1st Differenced Prices")
+```
+The timeseries plot appears to have some seasonality. The ACF and PACF plots also follow a cyclic pattern that shows that there is some seasonality present. Since this is monthly data, we will take a difference for lag 12 to remove the seasonality.
+
+```{r}
+# Take seasonal difference for lag = 12 (Yt = Wt - Wt-12)
+prices_diff2 <- diff(prices_diff, lag = 12)
+
+# Plot the timeseries for the differenced data
+ts.plot(prices_diff2, gpars = list(main = "Time Series Plot for the differenced data", xlab = "Year", ylab = "Differenced Average House Prices"))
+
+# Plot ACF vs Lag for the differenced data
+acf(prices_diff2, lag.max =60, main = "ACF vs Lag for Differenced House Prices")
+
+# Plot PACF vs Lag for the differenced data
+pacf(prices_diff2, lag.max = 60, main = "PACF vs Lag for Differenced House Prices")
+
+```
+
+These plots show that the data is (weakly) stationary after taking seasonal and non seasonal difference.
+
+The timeplot appears to have an almost constant mean 0 and a constant variability over time.
+
+First we consider the ACF plot
+
+The sample ACF has a sudden decline to 0 after lag 1. We assume that the non-seasonal part of the timeseries has an MA component of order 1.
+
+We can also see a spike at 1. This means that the seasonal part of the timeseries also contains an MA component. Since, the ACF drops to almost zero (within the range (-2/√n, 2/√n) ) after one spike at 1, we assume that the seasonal part has an MA component of order 1.
+
+Lets begin by fitting an ARIMA (0, 1, 1) × (0, 1, 1)12 model on the prices data. Here the order of differencing is 1 for both seasonal and non-seasonal parts in order to make the timeseries stationary.
+
+```{r}
+#Code to fit ARIMA (0, 1, 1) × (0, 1, 1)12 model to the Average House Prices data
+
+#p = 0 Order of the AR component of the non-seasonal part
+#d = 1 Order of differencing for the non-seasonal part
+#q = 1 Order of the MA component of the non-seasonal part
+
+#P = 0 Order of the AR component of the seasonal part
+#D = 1 Order of differencing for the seasonal part
+#Q = 1 Order of the MA component of the seasonal part
+
+model.SARMA0101<-arima(prices,order=c(0,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA0101
+```
+The estimates for θ1(non-seasonal), Θ1(seasonal part) and sigma^2 are -0.1808, -0.6961 and 1131137 respectively.
+We have a negative log likelihood value of -901.54 and an AIC value of 1809.08
+
+Lets check if the model residuals are white noise.
+
+```{r}
+# Extract the residuals of the model
+resid.SARMA0101<-residuals(model.SARMA0101)
+```
+
+```{r}
+# Plot the residuals
+ts.plot(resid.SARMA0101, gpars = list(main = "Plot for residuals of ARIMA(0,1,1)×(0,1,1)12 model", xlab = "Year", ylab = "ARIMA(0,1,1)×(0,1,1)12 Residuals"))
+
+# Plot ACF for the residuals
+acf(resid.SARMA0101, lag.max = 50, main = "ACF vs Lag for ARIMA(0,1,1)×(0,1,1)12 Residuals")
+
+# Plot PACF for the residuals
+pacf(resid.SARMA0101, lag.max = 50, main = "PACF vs Lag for ARIMA(0,1,1)×(0,1,1)12 Residuals")
+
+```
+The timeseries plot shows that the residuals are not white noise. We can see that the mean is high in the middle years and less in the start and end years.
+This shows that the residuals still have some pattern and are not independent.
+
+The ACF values are in the range (-2/√n, 2/√n). Therefore, we will not add any more MA component for now.
+
+The PACF plot has significant spikes at lag 3 and 4. After lag 4 it is within the range (-2/√n, 2/√n). Try adding a non-seasonal AR component of order 4.
+There are no significant spikes after seasonal lags. Therefore, we assume that there is no AR component in the seasonal part of the timeseries.
+
+Fit an ARIMA (4, 1, 1) × (0, 1, 1)12 model on the prices data.
+
+```{r}
+#Code to fit ARIMA (4, 1, 1) × (0, 1, 1)12 model to the average house prices data
+
+#p = 4 Order of the AR component of the non-seasonal part
+#d = 1 Order of differencing for the non-seasonal part
+#q = 1 Order of the MA component of the non-seasonal part
+
+#P = 0 Order of the AR component of the seasonal part
+#D = 1 Order of differencing for the seasonal part
+#Q = 1 Order of the MA component of the seasonal part
+
+model.SARMA4101<-arima(prices,order=c(4,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA4101
+```
+The estimates for  φ1,φ2,φ3,φ4,θ1(non-seasonal) and Θ1(seasonal part) are 0.1710,0.2498,0.2201,0.1750,-0.5282 and -0.8325 respectively.
+The sigma^2 estimate is 869901. The log likelihood is -890.46 and aic is 1794.92.
+
+Perform a hypothesis test for φ4
+H0 : φ4 = 0 versus H1 : φ4 != 0
+
+The test statistic is |0.1750/0.1294| = 1.35 < 2. Therefore we retain H0 at 5% significance level and conclude that φ4 = 0. 
+
+Lets remove φ4 from the model and fit an ARIMA (3, 1, 1) × (0, 1, 1)12 model
+
+```{r}
+#Code to fit ARIMA (3, 1, 1) × (0, 1, 1)12 model to the average house prices data
+
+#p = 3 Order of the AR component of the non-seasonal part
+#d = 1 Order of differencing for the non-seasonal part
+#q = 1 Order of the MA component of the non-seasonal part
+
+#P = 0 Order of the AR component of the seasonal part
+#D = 1 Order of differencing for the seasonal part
+#Q = 1 Order of the MA component of the seasonal part
+
+model.SARMA3101<-arima(prices,order=c(3,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA3101
+```
+The estimates for  φ1,φ2,φ3,θ1(non-seasonal) and Θ1(seasonal part) are 0.3700,0.3296,0.2042,-0.7155 and -0.8570 respectively.
+The sigma^2 estimate is 873017. The log likelihood is -891.2 and aic is 1794.4.
+
+The AIC is slightly decreased. However, for the following hypothesis test:
+
+H0 : φ3 = 0 versus H1 : φ3 != 0
+
+The test statistic is |0.2042/0.1147| = 1.78 < 2. Therefore we retain H0 at 5% significance level and conclude that φ3 = 0. 
+
+Lets remove φ3 from the model and fit an ARIMA (2, 1, 1) × (0, 1, 1)12 model
+
+```{r}
+#Code to fit ARIMA (2, 1, 1) × (0, 1, 1)12 model to the average house prices data
+
+#p = 2 Order of the AR component of the non-seasonal part
+#d = 1 Order of differencing for the non-seasonal part
+#q = 1 Order of the MA component of the non-seasonal part
+
+#P = 0 Order of the AR component of the seasonal part
+#D = 1 Order of differencing for the seasonal part
+#Q = 1 Order of the MA component of the seasonal part
+
+model.SARMA2101<-arima(prices,order=c(2,1,1), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA2101
+```
+
+The estimates for  φ1,φ2,θ1(non-seasonal) and Θ1(seasonal part) are 0.5362, 0.4184, -0.8323 and -0.8786 respectively.
+The sigma^2 estimate is 888206. The log likelihood is -892.62 and aic is 1795.24.
+
+The AIC has very slightly increased. However, a parameter has been removed. So, we prefer this ARIMA (2, 1, 1) × (0, 1, 1)12 model over the previous models.
+
+Lets check if the residuals are white noise.
+
+```{r}
+# Extract the residuals of the model
+resid.SARMA2101<-residuals(model.SARMA2101)
+```
+
+```{r}
+# Plot the residuals
+ts.plot(resid.SARMA2101, gpars = list(main = "Plot for residuals of ARIMA(2,1,1)×(0,1,1)12 model", xlab = "Year", ylab = "ARIMA(2,1,1)×(0,1,1)12 Residuals"))
+
+# Plot ACF for the residuals
+acf(resid.SARMA2101, lag.max = 50, main = "ACF vs Lag for ARIMA(2,1,1)×(0,1,1)12 Residuals")
+
+# Plot PACF for the residuals
+pacf(resid.SARMA2101, lag.max = 50, main = "PACF vs Lag for ARIMA(2,1,1)×(0,1,1)12 Residuals")
+
+```
+The model residuals appear to be white noise.
+
+The timeplot shows a constant mean 0 and a constant variance for the residuals.
+The ACF is also 0 (or close to 0) for lag >= 1. This suggests that the residuals are independent.
+
+Next we produce a plot of the Ljung-Box test P-values to see how well the model fits the data.
+
+```{r}
+#Function to produce P-values for the Ljung-Box test for different lags
+#where an ARIMA(p,d,q)x(P,D,Q)_h model has been fitted.
+#Note that k must be > p+q+P+Q 
+#Number of degrees of freedom for the test = k-p-q-P-Q
+
+#Arguments for the function "LB_test"
+#resid = residuals from a fitted ARIMA(p,d,q)x(P,D,Q)_h model
+
+#max.k = the maximum value of k at which we perform the test
+#Note that the minimum k is set at p+q+P+Q+1 (corresponding to a test with one degree
+#of freedom)
+
+#p = Order of the non-seasonal AR part of the model
+#q = Order of the non-seasonal MA part of the model
+#P = Order of the seasonal AR part of the model
+#Q = Order of the seasonal MA part of the model 
+
+#The function returns a table with one column showing the number of degrees 
+#of freedom for the test and the other the associated P-value.
+
+LB_test_SARIMA<-function(resid,max.k,p,q,P,Q){
+  lb_result<-list()
+  df<-list()
+  p_value<-list()
+  for(i in (p+q+P+Q+1):max.k){
+    lb_result[[i]]<-Box.test(resid,lag=i,type=c("Ljung-Box"),fitdf=(p+q+P+Q))
+    df[[i]]<-lb_result[[i]]$parameter
+    p_value[[i]]<-lb_result[[i]]$p.value
+  }
+  df<-as.vector(unlist(df))
+  p_value<-as.vector(unlist(p_value))
+  test_output<-data.frame(df,p_value)
+  names(test_output)<-c("deg_freedom","LB_p_value")
+  return(test_output)
+}
+```
+
+
+```{r}
+
+#Ljung-Box tests for the model residuals (max.k=14)
+MA1.LB<-LB_test_SARIMA(resid.SARMA2101,max.k=14,p=2,q=1, P=0, Q=1)
+#To see the table of P-values, type
+MA1.LB
+#To produce a plot of the P-values against the degrees of freedom and
+#add a blue dashed line at 0.05, we run the commands
+plot(MA1.LB$deg_freedom,MA1.LB$LB_p_value,xlab="Degrees of freedom",ylab="Pvalue",main="Ljung-Box test P-values",ylim=c(0,1))
+abline(h=0.05,col="blue",lty=2)
+
+```
+We can see that the first 2 p-values are less than 0.05. Change the order slightly to improve the model fit.
+
+Lets try the following models 
+  ARIMA (2, 1, 2) × (0, 1, 1)12, 
+  ARIMA (1, 1, 2) × (0, 1, 1)12, 
+  ARIMA (2, 1, 1) × (1, 1, 1)12, 
+  ARIMA (2, 1, 1) × (0, 1, 2)12
+
+```{r}
+# ARIMA (2, 1, 2) × (0, 1, 1)12
+model.SARMA2201<-arima(prices,order=c(2,1,2), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA2201
+
+# ARIMA (1, 1, 2) × (0, 1, 1)12
+model.SARMA1201<-arima(prices,order=c(1,1,2), seasonal = list(order = c(0,1,1), period = 12), method="ML")
+model.SARMA1201
+
+# ARIMA (2, 1, 1) × (1, 1, 1)12
+model.SARMA2111<-arima(prices,order=c(2,1,1), seasonal = list(order = c(1,1,1), period = 12), method="ML")
+model.SARMA2111
+
+# ARIMA (2, 1, 1) × (0, 1, 2)12
+model.SARMA2102<-arima(prices,order=c(2,1,1), seasonal = list(order = c(0,1,2), period = 12), method="ML")
+model.SARMA2102
+```
+Among these models ARIMA (1, 1, 2) × (0, 1, 1)12 has the lowest AIC of 1790.89. Therefore we prefer this model. 
+
+The estimates for  φ1,θ1,θ2(non-seasonal) and Θ1(seasonal part) are 0.855, -1.2235, 0.5234 and -0.8109 respectively.
+The sigma^2 estimate is 874922. The log likelihood is -890.44.
+
+Lets check if the residuals are white noise.
+
+```{r}
+# Extract the residuals of the model
+resid.SARMA1201<-residuals(model.SARMA1201)
+```
+
+```{r}
+# Plot the residuals
+ts.plot(resid.SARMA1201, gpars = list(main = "Plot for residuals of ARIMA(1,1,2)×(0,1,1)12 model", xlab = "Year", ylab = "ARIMA(1,1,2)×(0,1,1)12 Residuals"))
+
+# Plot ACF for the residuals
+acf(resid.SARMA1201, lag.max = 50, main = "ACF vs Lag for ARIMA(1,1,2)×(0,1,1)12 Residuals")
+
+# Plot PACF for the residuals
+pacf(resid.SARMA1201, lag.max = 50, main = "PACF vs Lag for ARIMA(1,1,2)×(0,1,1)12 Residuals")
+
+```
+The model residuals appear to be white noise.
+
+The timeplot shows a constant mean 0 and a constant variance for the residuals.
+The ACF is also 0 (or close 0) for lag >= 1. This suggests that the residuals are independent.
+
+Next we produce a plot of the Ljung-Box test P-values to see how well the model fits the data.
+
+```{r}
+
+#Ljung-Box tests for the model residuals (max.k=14)
+MA1.LB<-LB_test_SARIMA(resid.SARMA1201,max.k=14,p=1,q=2, P=0, Q=1)
+#To see the table of P-values, type
+MA1.LB
+#To produce a plot of the P-values against the degrees of freedom and
+#add a blue dashed line at 0.05, we run the commands
+plot(MA1.LB$deg_freedom,MA1.LB$LB_p_value,xlab="Degrees of freedom",ylab="Pvalue",main="Ljung-Box test P-values",ylim=c(0,1))
+abline(h=0.05,col="blue",lty=2)
+
+```
+All the p-values are greater than 0.05. This suggests that the ARIMA(1,1,2)×(0,1,1)12 is a good fit for the data.
+
+Therefore, we choose the ARIMA(1,1,2)×(0,1,1)12 model as the most appropriate model for the Average House Prices data.
+
+The equation for this model is:
+
+$$
+\phi_p(B)\Phi_P(B^h)(1 - B)^d (1 - B^h)^D X_t = \theta_q(B)\Theta_Q(B^h)Z_t
+$$
+Here,
+$$
+\phi_p(B) = 1 - \phi_1B - \phi_2B^2 - \ldots - \phi_pB^p\\
+\Phi_P(B^h) = 1 - \Phi_1B^h - \Phi_2B^{2h} - \ldots - \Phi_PB^{Ph}\\
+\theta_q(B) = 1 + \theta_1B + \theta_2B^2 + \ldots + \theta_qB^q\\
+\Theta_Q(B) = 1 + \Theta_1B^h + \Theta_2B^{2h} + \ldots + \Theta_QB^{Qh}
+$$
+We know that p = 1, d = 1, q = 2, P = 0, D = 1, Q = 1 and h = 12 for ARIMA(1,1,2)×(0,1,1)12
+
+The equation becomes,
+$$
+\phi_1(B)\Phi_0(B^{12})(1 - B)^1 (1 - B^{12})^1 X_t = \theta_2(B)\Theta_1(B^{12})Z_t\\
+
+(1 - \phi_1B)(1)(1 - B)(1 - B^{12})X_t = (1 + \theta_1B + \theta_2B^2)(1 + \Theta_1B^{12})Z_t\\
+
+X_t - (1 + \phi_1)X_{t-1} + \phi_1X_{t-2} - X_{t-12} + (1 + \phi_1)X_{t-13} + \phi_1X_{t-14} = Z_t + \theta_1Z_{t-1} + \theta_2Z_{t-2} + \Theta_1Z_{t-12} + \theta_1\Theta_1Z_{t-13} + \theta_2\Theta_1Z_{t-14} 
+
+$$
+φ1 = 0.855
+θ1 = -1.2235
+θ2 = 0.5234
+Θ1 = -0.8109
+
+Putting values in the equation,
+$$
+X_t - 1.855X_{t-1} + 0.855X_{t-2} - X_{t-12} + 1.855X_{t-13} + 0.855X_{t-14} = Z_t - 1.2235Z_{t-1} + 0.5234Z_{t-2} - 0.8109Z_{t-12} + 0.99Z_{t-13} - 0.424Z_{t-14} 
+$$
+where Xt = original timeseries
+      Zt = white noise
+
+Now lets forecast the prices for the first six months of 2020
+
+```{r}
+#install.packages("forecast")
+library(forecast)
+
+# Forecast the values for next 6 months
+forecast_values <- forecast(model.SARMA1201, h = 6)
+
+# Plot the forecasted values
+plot(forecast_values)
+
+# Print the forecasted values
+print(forecast_values)
+```
+The above plot shows the forecasted house prices for the first six months of 2020 along with the known prices for Jan 2010 - Dec 2019.
+The grey shade on the forecasted values shows that there is some uncertainty in the predicted values.
+
+The forecasted values for Jan 2020 - June 2020 are 193930.5, 194836.4, 194401.0, 196204.1, 197202.1 and 197933.9.
+The lower and upper bounds for the prediction intervals of these values at 80% and 95% confidence level are shown in the table above.
+These confidence levels mean that there is 80% and 95% probability respectively that the house prices will fall within these bounds.
+
+The 95% prediction interval has a wider range compared to the 80% interval, indicating higher uncertainty but with greater confidence.
