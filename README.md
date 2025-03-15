@@ -62,7 +62,7 @@ The following steps were carried out for both datasets:
 
 - R programming environment
 
-- Required libraries: forecast, tseries
+- Required libraries: forecast
 
 ### Steps
 
