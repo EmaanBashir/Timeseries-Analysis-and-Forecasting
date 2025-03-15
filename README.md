@@ -58,6 +58,12 @@ The following steps were carried out for both datasets:
 
 ## 🚀 How to Run the Analysis
 
+### Requirements
+
+- R programming environment
+
+- Required libraries: forecast, tseries
+
 ### Steps
 
 1. Clone the repository:
