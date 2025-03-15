@@ -73,11 +73,15 @@ The following steps were carried out for both datasets:
 
 ### Temperature Trend
 
+![image](https://github.com/user-attachments/assets/98cd10fa-9725-4a0a-ad79-8c0a7760ba83)
+
 &#x20;*Figure 1: Temperature time series plot (1900-2021)*
 
 ### House Price Forecast
 
-&#x20;*Figure 2: Forecasted house prices for 2020*
+![image](https://github.com/user-attachments/assets/430fc6e7-e1f6-4784-88d6-d87302d9cf9e)
+
+&#x20;*Figure 2: Forecasted house prices for first 6 months of 2020*
 
 ## 🎯 Conclusion
 
