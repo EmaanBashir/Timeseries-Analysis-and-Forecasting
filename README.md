@@ -9,6 +9,24 @@ This project is part of my MSc Data Science coursework, focusing on time series 
 
 The analysis aims to uncover trends, stationarity, and optimal ARIMA models for forecasting.
 
+## 📌 Table of Contents
+
+1. [Data](#-data)
+2. [Methodology](#-methodology)
+   - [Data Exploration](#1️⃣-data-exploration)
+   - [Stationarity Checks](#2️⃣-stationarity-checks)
+   - [Model Selection](#3️⃣-model-selection)
+   - [Model Evaluation](#4️⃣-model-evaluation)
+   - [Forecasting](#5️⃣-forecasting)
+3. [Key Results](#-key-results)
+   - [Temperature Analysis](#-temperature-analysis)
+   - [House Price Forecasting](#-house-price-forecasting)
+4. [How to Run the Analysis](#-how-to-run-the-analysis)
+5. [Visualizations](#-visualizations)
+   - [Temperature Trend](#-temperature-trend)
+   - [House Price Forecast](#-house-price-forecast)
+6. [Conclusion](#-conclusion)
+
 ## 📊 Data
 
 The datasets used in this project are:
@@ -61,7 +79,6 @@ The following steps were carried out for both datasets:
 ### Requirements
 
 - R programming environment
-
 - Required libraries: forecast
 
 ### Steps
